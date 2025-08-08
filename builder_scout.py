@@ -471,8 +471,8 @@ Return JSON array with: index, keywords (array), summary (string), vibe (string)
             except Exception as e:
                 console.print(f"[yellow]LLM enrichment error: {e}[/yellow]")
     
-    def display_builders(self, builders: List[Builder], output_format: str = 'table') -> None:
-        """Display builders in table or JSON format."""
+    def display_builders(self, builders: List[Builder], output_format: str = 'card') -> None:
+        """Display builders in card or JSON format."""
         if output_format == 'json':
             output = {
                 'metadata': {
@@ -485,91 +485,138 @@ Return JSON array with: index, keywords (array), summary (string), vibe (string)
             console.print(json.dumps(output, indent=2))
             return
         
-        table = Table(
-            title=f"🔨 Top {len(builders)} Overlooked Prolific Builders",
-            box=box.ROUNDED,
-            show_lines=True
-        )
+        if output_format == 'compact':
+            self.display_compact(builders)
+        else:
+            self.display_cards(builders)
+    
+    def display_compact(self, builders: List[Builder]) -> None:
+        """Display in compact one-line format."""
+        # Header
+        console.print(f"\n[bold cyan]🔨 Builder Scout - Overlooked Prolific Builders[/bold cyan]")
+        console.print(f"[dim]Projects from last {self.days} days | Activity analyzed from recent GitHub events[/dim]\n")
         
-        table.add_column("Rank", style="cyan", width=5)
-        table.add_column("Builder", style="bright_cyan", width=22)
-        table.add_column("Score", style="yellow", width=8)
-        table.add_column("Activity", style="green", width=38)
-        table.add_column("AI", style="magenta", width=5)
-        if not self.no_llm:
-            table.add_column("Profile", style="bright_white", width=42)
-        
-        for idx, builder in enumerate(builders, 1):
+        for i, builder in enumerate(builders, 1):
+            username = builder.github_username
+            name = builder.github_profile.get('name', '') if builder.github_profile else ''
+            display_name = f"{name} (@{username})" if name else f"@{username}"
+            
             # Activity summary
+            repos = len(builder.all_repos)
+            pushes = builder.activity_stats.get('PushEvent', 0)
+            creates = builder.activity_stats.get('CreateEvent', 0)
+            ai = "AI✓" if builder.ai_usage_signals else ""
+            
+            score_color = "bright_magenta" if builder.score > 60 else "magenta"
+            
+            # One-line format
+            console.print(f"{i:2}. [{score_color}]{builder.score:.1f}[/{score_color}] [bright_blue]{display_name:35}[/bright_blue] [green]{repos} repos, {pushes} pushes, {creates} new[/green] [yellow]{ai}[/yellow]")
+        
+        console.print(f"\n[dim]Higher scores = prolific builders with low recognition[/dim]")
+    
+    def display_cards(self, builders: List[Builder]) -> None:
+        """Display in card format (default)."""
+        # Header
+        console.print(f"\n[bold cyan]🔨 Builder Scout - Overlooked Prolific Builders[/bold cyan]")
+        console.print(f"[dim]Analyzing projects from last {self.days} days | GitHub activity from recent events (up to 90 days)[/dim]")
+        console.print(f"[dim]Found {len(builders)} builders from overlooked projects[/dim]\n")
+        
+        for i, builder in enumerate(builders, 1):
+            # Rank and Score
+            score_color = "bright_magenta" if builder.score > 60 else "magenta"
+            console.print(f"[bold]{i}.[/bold] [bold {score_color}]Score: {builder.score:.1f}[/bold {score_color}]", end="  ")
+            
+            # AI badge
+            if builder.ai_usage_signals:
+                console.print("[yellow][AI-ASSISTED][/yellow]", end="  ")
+            
+            console.print()  # New line after badges
+            
+            # Builder name and username
+            if builder.github_profile and builder.github_profile.get('name'):
+                console.print(f"   [bold green]{builder.github_profile['name']}[/bold green] ([bright_blue]@{builder.github_username}[/bright_blue])")
+            else:
+                console.print(f"   [bold bright_blue]@{builder.github_username}[/bold bright_blue]")
+            
+            # Bio if available
+            if builder.github_profile and builder.github_profile.get('bio'):
+                bio = builder.github_profile['bio'][:100]
+                console.print(f"   [white]{bio}[/white]")
+            
+            # Activity summary with time context
             activity_parts = []
             if builder.all_repos:
-                recent_repos = sum(1 for r in builder.all_repos 
-                                 if (datetime.now(timezone.utc) - 
-                                     datetime.fromisoformat(r.get('updated_at', '2000-01-01').replace('Z', '+00:00'))).days < 30)
-                activity_parts.append(f"📦 {recent_repos}/{len(builder.all_repos)} repos")
-            if builder.activity_stats.get('PushEvent'):
-                activity_parts.append(f"💾 {builder.activity_stats['PushEvent']} pushes")
-            if builder.activity_stats.get('CreateEvent'):
-                activity_parts.append(f"✨ {builder.activity_stats['CreateEvent']} new")
+                # Count repos updated in different time frames
+                repos_30d = sum(1 for r in builder.all_repos 
+                              if (datetime.now(timezone.utc) - 
+                                  datetime.fromisoformat(r.get('updated_at', '2000-01-01').replace('Z', '+00:00'))).days < 30)
+                repos_90d = sum(1 for r in builder.all_repos 
+                              if (datetime.now(timezone.utc) - 
+                                  datetime.fromisoformat(r.get('updated_at', '2000-01-01').replace('Z', '+00:00'))).days < 90)
+                activity_parts.append(f"📦 {repos_30d} repos active (30d), {repos_90d} total active (90d)")
             
-            activity_str = " | ".join(activity_parts) if activity_parts else "No activity"
+            if builder.activity_stats:
+                pushes = builder.activity_stats.get('PushEvent', 0)
+                creates = builder.activity_stats.get('CreateEvent', 0)
+                prs = builder.activity_stats.get('PullRequestEvent', 0)
+                if pushes:
+                    activity_parts.append(f"💾 {pushes} push events")
+                if creates:
+                    activity_parts.append(f"✨ {creates} new projects/branches")
+                if prs:
+                    activity_parts.append(f"🔀 {prs} PRs")
             
-            # AI indicator
-            ai_indicator = "✅" if builder.ai_usage_signals else "❌"
+            if activity_parts:
+                console.print(f"   [cyan]Recent Activity:[/cyan] {', '.join(activity_parts)}")
             
-            # Builder info
-            builder_info = f"@{builder.github_username}"
-            if builder.github_profile and builder.github_profile.get('name'):
-                builder_info = f"{builder.github_profile['name']}\n@{builder.github_username}"
+            # AI usage details
+            if builder.ai_usage_signals:
+                console.print(f"   [yellow]🤖 AI Usage:[/yellow] {len(builder.ai_usage_signals)} commits with AI assistance detected")
             
-            row = [
-                str(idx),
-                builder_info,
-                f"{builder.score:.1f}",
-                activity_str,
-                ai_indicator
-            ]
-            
-            # LLM profile
+            # LLM enrichment
             if not self.no_llm:
-                profile_parts = []
-                if builder.keywords:
-                    profile_parts.append(f"🏷️ {', '.join(builder.keywords[:3])}")
                 if builder.summary:
-                    profile_parts.append(f"💡 {builder.summary[:80]}")
+                    console.print(f"   [italic]💡 {builder.summary}[/italic]")
+                if builder.keywords:
+                    console.print(f"   [cyan]Skills: {', '.join(builder.keywords)}[/cyan]")
                 if builder.vibe:
-                    profile_parts.append(f"✨ {builder.vibe}")
-                row.append("\n".join(profile_parts))
+                    console.print(f"   [magenta]Vibe: {builder.vibe}[/magenta]")
             
-            table.add_row(*row)
+            # Discovery source
+            if builder.discovered_projects:
+                project = builder.discovered_projects[0]
+                if project['source'] == 'hn':
+                    source_text = f"HN: {project.get('title', 'Unknown')[:50]}"
+                else:
+                    source_text = f"GitHub: {project.get('name', 'Unknown')}"
+                console.print(f"   [dim]Discovered via: {source_text}[/dim]")
             
-            # Verbose info
+            # GitHub profile link
+            console.print(f"   [dim]Profile: https://github.com/{builder.github_username}[/dim]")
+            
+            # Verbose details
             if self.verbose and builder.score_breakdown:
-                details = Text()
-                details.append("📊 ", style="dim")
-                score_parts = [f"{k}: {v:.0f}" for k, v in builder.score_breakdown.items() if v > 0]
-                details.append(" | ".join(score_parts), style="dim")
-                
-                if builder.discovered_projects:
-                    project = builder.discovered_projects[0]
-                    details.append(f"\n📍 Found via: ", style="dim")
-                    title = project.get('title', project.get('name', 'project'))[:40]
-                    details.append(title, style="dim")
-                
-                table.add_row("", details, "", "", "", "" if not self.no_llm else None)
+                console.print(f"   [dim]Score breakdown:", end="")
+                score_parts = [f"{k.replace('_', ' ')}: {v:.0f}" for k, v in builder.score_breakdown.items() if v > 0]
+                console.print(f" {' | '.join(score_parts)}[/dim]")
+            
+            # Separator between builders
+            if i < len(builders):
+                console.print()
         
-        console.print(table)
-        
-        # Summary
-        console.print(f"\n📊 Summary:")
-        console.print(f"  • {len(builders)} overlooked prolific builders found")
+        # Footer with summary
+        console.print(f"\n[dim]📊 Summary Statistics:[/dim]")
         ai_users = sum(1 for b in builders if b.ai_usage_signals)
-        if builders:
-            console.print(f"  • {ai_users}/{len(builders)} using AI tools ({ai_users/len(builders)*100:.0f}%)")
         total_repos = sum(len(b.all_repos) for b in builders)
-        console.print(f"  • {total_repos} total repositories")
-        total_commits = sum(b.activity_stats.get('PushEvent', 0) for b in builders)
-        console.print(f"  • {total_commits} recent push events")
+        total_pushes = sum(b.activity_stats.get('PushEvent', 0) for b in builders)
+        
+        console.print(f"[dim]  • {len(builders)} builders analyzed[/dim]")
+        if builders:
+            console.print(f"[dim]  • {ai_users}/{len(builders)} ({ai_users/len(builders)*100:.0f}%) using AI tools[/dim]")
+        console.print(f"[dim]  • {total_repos} total repositories across all builders[/dim]")
+        console.print(f"[dim]  • {total_pushes} total push events in recent activity[/dim]")
+        console.print(f"\n[dim]Scoring: Prolificness (commits, new projects) × Overlooked factor (low stars/forks)[/dim]")
+        console.print(f"[dim]Higher scores = talented builders working on overlooked projects[/dim]")
     
     async def scout(self) -> List[Builder]:
         """Main scouting method."""
@@ -648,8 +695,8 @@ def main():
                        help='Skip LLM enrichment')
     parser.add_argument('--verbose', action='store_true',
                        help='Show detailed information')
-    parser.add_argument('--output', choices=['table', 'json'], default='table',
-                       help='Output format (default: table)')
+    parser.add_argument('--output', choices=['card', 'compact', 'json'], default='card',
+                       help='Output format (default: card)')
     
     args = parser.parse_args()
     
