@@ -34,11 +34,11 @@ python3 builder_scout.py [options]
 🔨 Builder Scout - Overlooked Prolific Builders
 Analyzing projects from last 7 days | GitHub activity from recent events (up to 90 days)
 
-1. Score: 75.0  [AI-ASSISTED]
+1. Score: 75.0  [Claude Code]
    Sarah Martinez (@smartz_dev)
    Full-stack developer | Building tools for developers | Open source enthusiast
    Recent Activity: 📦 8 repos active (30d), 23 total active (90d), 💾 67 push events
-   🤖 AI Usage: 12 commits with AI assistance detected
+   🤖 AI Usage: Claude Code (8), GitHub Copilot (4) - 12 total AI-assisted commits
    Discovered via: HN post (2024-01-15): Show HN: QuantumCSS – A CSS-in-Rust compiler
    Profile: https://github.com/smartz_dev
 ```
@@ -53,11 +53,18 @@ Analyzing projects from last 7 days | GitHub activity from recent events (up to 
 
 ### AI Detection
 
-Builder Scout can identify developers using AI tools by analyzing commit messages for patterns like:
-- "Generated with Claude"
-- "Co-authored-by: Copilot"
-- AI-related emojis (🤖)
-- Other AI tool signatures
+Builder Scout identifies specific AI tools developers are using by analyzing commit messages. It detects and tracks:
+- **Claude Code** - "Generated with Claude Code", "Co-authored-by: Claude"
+- **GitHub Copilot** - "Generated with Copilot", "Co-authored-by: Copilot"
+- **Cursor** - "Generated with Cursor", "Cursor AI"
+- **ChatGPT/GPT** - "Generated with ChatGPT/GPT"
+- **Codeium** - "Generated with Codeium"
+- **Tabnine** - "Generated with Tabnine"
+- **Amazon Q** - "Generated with Amazon Q"
+- **Google Gemini/Bard** - "Generated with Gemini/Bard"
+- Other AI tool signatures and 🤖 emojis
+
+The tool displays which specific AI assistant each builder uses, making it easy to see adoption patterns across different AI coding tools.
 
 ---
 
@@ -129,11 +136,11 @@ python3 builder_scout.py [options]
 🔨 Builder Scout - Overlooked Prolific Builders
 Analyzing projects from last 7 days | GitHub activity from recent events (up to 90 days)
 
-1. Score: 75.0  [AI-ASSISTED]
+1. Score: 75.0  [Claude Code]
    Sarah Martinez (@smartz_dev)
    Full-stack developer | Building tools for developers | Open source enthusiast
    Recent Activity: 📦 8 repos active (30d), 23 total active (90d), 💾 67 push events
-   🤖 AI Usage: 12 commits with AI assistance detected
+   🤖 AI Usage: Claude Code (8), GitHub Copilot (4) - 12 total AI-assisted commits
    Discovered via: HN post (2024-01-15): Show HN: QuantumCSS – A CSS-in-Rust compiler
    Profile: https://github.com/smartz_dev
 ```
@@ -148,11 +155,18 @@ Analyzing projects from last 7 days | GitHub activity from recent events (up to 
 
 ### AI Detection
 
-Builder Scout can identify developers using AI tools by analyzing commit messages for patterns like:
-- "Generated with Claude"
-- "Co-authored-by: Copilot"
-- AI-related emojis (🤖)
-- Other AI tool signatures
+Builder Scout identifies specific AI tools developers are using by analyzing commit messages. It detects and tracks:
+- **Claude Code** - "Generated with Claude Code", "Co-authored-by: Claude"
+- **GitHub Copilot** - "Generated with Copilot", "Co-authored-by: Copilot"
+- **Cursor** - "Generated with Cursor", "Cursor AI"
+- **ChatGPT/GPT** - "Generated with ChatGPT/GPT"
+- **Codeium** - "Generated with Codeium"
+- **Tabnine** - "Generated with Tabnine"
+- **Amazon Q** - "Generated with Amazon Q"
+- **Google Gemini/Bard** - "Generated with Gemini/Bard"
+- Other AI tool signatures and 🤖 emojis
+
+The tool displays which specific AI assistant each builder uses, making it easy to see adoption patterns across different AI coding tools.
 
 ---
 
