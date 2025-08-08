@@ -205,14 +205,13 @@ class FounderScout:
         if self.github_token:
             headers['Authorization'] = f'token {self.github_token}'
         
-        # Cast wider net for interesting projects
+        # Cast wider net without language bias
         queries = [
             f"created:>{date_filter} stars:<100",  # New projects, not yet viral
             f"pushed:>{date_filter} stars:<50",  # Recently active, overlooked
-            f"created:>{date_filter} language:Rust",  # New Rust projects (often interesting)
-            f"created:>{date_filter} language:Zig",  # New Zig projects (cutting edge)
-            f"created:>{date_filter} topic:tool",  # Developer tools
-            f"created:>{date_filter} topic:cli",  # CLI tools
+            f"created:>{date_filter} stars:0..5",  # Brand new with no traction
+            f"created:>{date_filter} size:>1000",  # Substantial new projects
+            f"pushed:>{date_filter} size:>5000 stars:<20",  # Big effort, low recognition
         ]
         
         seen_repos = set()  # Avoid duplicates
@@ -355,7 +354,7 @@ Return a JSON array with one object per item:
     # Removed get_basic_founder_reason and calculate_basic_founder_score - no longer needed
     
     def score_and_rank_projects(self, items: List[Dict]) -> List[Dict]:
-        """Score projects based on how overlooked and interesting they are"""
+        """Score projects based on balance between engagement and passion"""
         
         scored_items = []
         for item in items:
@@ -364,97 +363,117 @@ Return a JSON array with one object per item:
             if item['source'] == 'hn':
                 points = item.get('score', 0)
                 comments = item.get('descendants', 0)
+                text = item.get('text', '')
+                title = item.get('title', '')
                 
-                # Overlooked score (low visibility is good)
-                if points < 5:
-                    scores['overlooked'] = 1.0
-                elif points < 20:
-                    scores['overlooked'] = 0.7
+                # Engagement score (normalized from 0-1)
+                if points == 0:
+                    engagement_norm = 0.05
+                elif points < 10:
+                    engagement_norm = 0.2
                 elif points < 50:
-                    scores['overlooked'] = 0.4
+                    engagement_norm = 0.4
+                elif points < 100:
+                    engagement_norm = 0.6
+                elif points < 500:
+                    engagement_norm = 0.8
                 else:
-                    scores['overlooked'] = max(0, 1 - (points / 200))
+                    engagement_norm = 1.0
                 
-                # Engagement score (some discussion is good, too much means not overlooked)
-                if 0 < comments <= 10:
-                    scores['engagement'] = 0.8
-                elif comments <= 30:
-                    scores['engagement'] = 0.5
+                scores['engagement'] = engagement_norm
+                
+                # Passion score based on effort/substance
+                passion_score = 0
+                
+                # Text length indicates effort in writing
+                text_len = len(text)
+                if text_len > 2000:
+                    passion_score += 1.0  # Very long, detailed post
+                elif text_len > 1000:
+                    passion_score += 0.8
+                elif text_len > 500:
+                    passion_score += 0.6
+                elif text_len > 200:
+                    passion_score += 0.4
+                elif text_len > 50:
+                    passion_score += 0.2
                 else:
-                    scores['engagement'] = 0.2
+                    passion_score += 0.05  # Just a link or very short
                 
-                # Passion indicators
-                title_lower = item.get('title', '').lower()
-                text_lower = item.get('text', '').lower()
-                combined = title_lower + ' ' + text_lower
+                # Show HN gets passion bonus (they built something)
+                if 'show hn:' in title.lower():
+                    passion_score = min(passion_score + 0.3, 1.0)
                 
-                passion_words = ['excited', 'love', 'passionate', 'obsessed', 'finally',
-                                  'proud', 'happy', 'spent months', 'spent years', 'dream']
-                scores['passion'] = min(sum(1 for word in passion_words if word in combined) * 0.3, 1.0)
+                # Has URL but also text = explaining their work
+                if item.get('url') and text_len > 100:
+                    passion_score = min(passion_score + 0.2, 1.0)
                 
-                # Weird/unique factor
-                weird_words = ['weird', 'unusual', 'strange', 'different', 'unique', 'niche',
-                               'experimental', 'crazy', 'stupid', 'useless', 'fun', 'toy']
-                scores['weird'] = min(sum(1 for word in weird_words if word in combined) * 0.25, 1.0)
-                
-                # Show HN bonus
-                if 'show hn:' in title_lower:
-                    scores['builder'] = 0.8
-                elif 'ask hn:' in title_lower:
-                    scores['builder'] = 0.3
-                else:
-                    scores['builder'] = 0.5
+                scores['passion'] = passion_score
                     
             else:  # GitHub
                 stars = item.get('stargazers_count', 0)
                 forks = item.get('forks_count', 0)
                 size = item.get('size', 0)
+                description = item.get('description', '')
                 
-                # Overlooked score
-                if stars < 10:
-                    scores['overlooked'] = 1.0
+                # Engagement score (normalized)
+                if stars == 0:
+                    engagement_norm = 0.05
+                elif stars < 10:
+                    engagement_norm = 0.2
                 elif stars < 50:
-                    scores['overlooked'] = 0.7
+                    engagement_norm = 0.4
                 elif stars < 200:
-                    scores['overlooked'] = 0.4
+                    engagement_norm = 0.6
+                elif stars < 1000:
+                    engagement_norm = 0.8
                 else:
-                    scores['overlooked'] = max(0, 1 - (stars / 1000))
+                    engagement_norm = 1.0
                 
-                # Completeness (bigger repos might be more complete)
-                if size > 1000:
-                    scores['completeness'] = 0.8
+                scores['engagement'] = engagement_norm
+                
+                # Passion score based on repo substance
+                passion_score = 0
+                
+                # Repository size indicates amount of work
+                if size > 10000:
+                    passion_score += 0.8  # Large, substantial project
+                elif size > 1000:
+                    passion_score += 0.6
                 elif size > 100:
-                    scores['completeness'] = 0.5
+                    passion_score += 0.4
+                elif size > 10:
+                    passion_score += 0.2
                 else:
-                    scores['completeness'] = 0.2
+                    passion_score += 0.05  # Nearly empty repo
                 
-                # Activity (forks show interest)
-                scores['engagement'] = min(forks * 0.2, 1.0)
+                # Good description shows care
+                if len(description) > 100:
+                    passion_score = min(passion_score + 0.3, 1.0)
+                elif len(description) > 30:
+                    passion_score = min(passion_score + 0.1, 1.0)
                 
-                # Language bonus for interesting techs
-                interesting_langs = ['Rust', 'Zig', 'Nim', 'Haskell', 'Erlang', 'Elixir',
-                                     'Crystal', 'V', 'Odin', 'Julia', 'OCaml']
-                lang = item.get('language', '')
-                if lang in interesting_langs:
-                    scores['weird'] = 0.7
-                else:
-                    scores['weird'] = 0.2
+                # Has README (we can infer from size usually)
+                if size > 50:  # Likely has documentation
+                    passion_score = min(passion_score + 0.1, 1.0)
                 
-                scores['builder'] = 0.6  # GitHub repos show building
-                scores['passion'] = 0.3  # Hard to detect passion from repo alone
+                scores['passion'] = min(passion_score, 1.0)
             
-            # Calculate weighted total
-            weights = {
-                'overlooked': 0.35,  # Most important - finding hidden gems
-                'weird': 0.20,       # Unique/interesting projects
-                'passion': 0.15,     # Creator enthusiasm
-                'builder': 0.15,     # Actually building something
-                'engagement': 0.10,  # Some activity/interest
-                'completeness': 0.05 # For GitHub repos
-            }
+            # Calculate overlooked score (inverse of engagement)
+            scores['overlooked'] = 1.0 - scores['engagement']
             
-            total = sum(scores.get(factor, 0) * weight for factor, weight in weights.items())
-            item['total_score'] = round(total, 2)
+            # Balance score: reward high passion with low engagement
+            passion_weight = scores['passion']
+            overlooked_weight = scores['overlooked']
+            
+            # The ideal is high passion + high overlooked
+            balance_score = (passion_weight * 0.6) + (overlooked_weight * 0.4)
+            
+            # Bonus for extreme cases: very high passion with very low engagement
+            if scores['passion'] > 0.7 and scores['overlooked'] > 0.7:
+                balance_score = min(balance_score * 1.2, 1.0)
+            
+            item['total_score'] = round(balance_score, 2)
             item['score_breakdown'] = scores
             scored_items.append(item)
         
@@ -565,8 +584,8 @@ Return a JSON array with one object per item:
                 self.console.print()
         
         # Score explanation
-        self.console.print("\n[dim]Scoring: Overlooked (35%) + Unique/Weird (20%) + Passion (15%) + Builder (15%) + Engagement (10%)[/dim]")
-        self.console.print("[dim]Higher scores = more likely to be an overlooked gem worth exploring[/dim]")
+        self.console.print("\n[dim]Scoring: Balance of Passion (effort/substance) vs Engagement (stars/points)[/dim]")
+        self.console.print("[dim]Higher scores = passionate projects with low visibility (overlooked gems)[/dim]")
         
         # Show details for top 3 if verbose
         if self.verbose and len(display_items) > 0:
@@ -577,9 +596,9 @@ Return a JSON array with one object per item:
                 # Show score breakdown
                 if 'score_breakdown' in item:
                     scores = item['score_breakdown']
-                    self.console.print(f"  Scores: Overlooked={scores.get('overlooked', 0):.1f}, "
-                                      f"Weird={scores.get('weird', 0):.1f}, "
-                                      f"Passion={scores.get('passion', 0):.1f}")
+                    self.console.print(f"  Scores: Passion={scores.get('passion', 0):.2f}, "
+                                      f"Engagement={scores.get('engagement', 0):.2f}, "
+                                      f"Overlooked={scores.get('overlooked', 0):.2f}")
                 
                 # Show vibe if available
                 if 'vibe' in item:

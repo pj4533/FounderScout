@@ -40,15 +40,16 @@ The codebase consists of a single main script `founder_scout.py` with the `Found
 
 1. **Data Collection**: Fetches data from Hacker News Firebase API and GitHub API in parallel
    - HN: Searches showstories, askstories, newstories, topstories for builder signals
-   - GitHub: Queries for new repos with various filters including interesting languages
+   - GitHub: Queries for new repos focusing on substance over specific languages
 
-2. **Scoring Algorithm**: Ranks projects by multiple factors (not "founder realness"):
-   - **Overlooked** (35%): Low visibility/stars but has substance
-   - **Weird/Unique** (20%): Unusual tech choices, niche domains, experimental
-   - **Passion** (15%): Creator enthusiasm and excitement detected in text
-   - **Builder** (15%): Evidence of actually building something
-   - **Engagement** (10%): Some activity but not too popular
-   - **Completeness** (5%): For GitHub repos, how substantial the project is
+2. **Scoring Algorithm**: Ranks projects by balancing passion vs engagement:
+   - **Passion**: How much effort/substance the creator put in
+     - For HN: Length of post text, detailed explanations
+     - For GitHub: Repository size, quality of description
+   - **Engagement**: How much attention it has received
+     - For HN: Points and comments
+     - For GitHub: Stars and forks
+   - **Goal**: Surface high-passion, low-engagement projects (overlooked gems)
 
 3. **LLM Post-Processing** (optional): After scoring, enriches top N results with:
    - Keywords extraction (3-5 technical/domain keywords)
@@ -60,8 +61,8 @@ The codebase consists of a single main script `founder_scout.py` with the `Found
 
 Key methods:
 - `scan_hackernews_for_founders()` - Casts wide net for any builder signals on HN
-- `scan_github_for_builders()` - Finds repos including those in interesting languages
-- `score_and_rank_projects()` - Multi-factor scoring focused on finding hidden gems
+- `scan_github_for_builders()` - Finds repos with substantial content
+- `score_and_rank_projects()` - Balances passion/effort against engagement
 - `enrich_with_llm()` - Batch post-processing for keywords/summaries (top N only)
 - `display_founders()` - Shows results with score breakdowns and enriched data
 
@@ -84,10 +85,10 @@ python3 founder_scout.py --days 7 --output json > results.json
 
 ## Key Implementation Notes
 
-- Philosophy: Finds overlooked gems rather than validating "real" founders
-- Scoring prioritizes low-visibility projects with interesting characteristics
+- Philosophy: Finds overlooked gems by balancing passion with engagement
+- Scoring rewards high effort/substance with low visibility
+- No language or keyword bias - focuses on effort and substance
 - LLM is used only for post-processing enrichment, not filtering
 - Batch LLM processing sends all top N results in one request
 - More inclusive detection - accepts various builder signals
-- GitHub searches include cutting-edge languages (Rust, Zig, etc.)
-- Results show what makes each project interesting/unique
+- Results show passionate builders who haven't gotten attention yet
