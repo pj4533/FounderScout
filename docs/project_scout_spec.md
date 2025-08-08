@@ -1,9 +1,9 @@
-# FounderScout – Automated Early Founder Discovery
+# ProjectScout – Automated Project Discovery
 
 ## Goal
-A zero-configuration CLI tool that automatically surfaces **under-the-radar builders** from Hacker News and GitHub.
+A zero-configuration CLI tool that automatically surfaces **overlooked projects** from Hacker News and GitHub.
 
-Just run `founderscout --days 7` and get a curated list of overlooked founders building interesting projects.
+Just run `projectscout --days 7` and get a curated list of overlooked projects and the builders behind them.
 
 **Core principle:** The tool does all the thinking for you. No search terms, no configuration - just smart detection of founder signals and overlooked gems.
 
@@ -13,7 +13,7 @@ Just run `founderscout --days 7` and get a curated list of overlooked founders b
 
 ### 1. Simple Input
 ```bash
-founderscout --days 7  # Only parameter needed
+projectscout --days 7  # Only parameter needed
 ```
 
 ### 2. Automated Discovery Process
@@ -23,7 +23,7 @@ The script automatically:
 2. **Analyzes each item** for founder signals and project characteristics
 3. **Extracts keywords** using LLM analysis (OpenAI API)
 4. **Scores everything** using the overlooked algorithm
-5. **Outputs a unified table** with all discovered founders
+5. **Outputs a unified table** with all discovered projects
 
 ---
 

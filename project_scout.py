@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FounderScout - Discover overlooked builders and interesting projects on HN and GitHub
+ProjectScout - Discover overlooked projects and interesting builders on HN and GitHub
 """
 
 import argparse
@@ -31,7 +31,7 @@ load_dotenv()
 HN_BASE_URL = "https://hacker-news.firebaseio.com/v0"
 GITHUB_BASE_URL = "https://api.github.com"
 
-class FounderScout:
+class ProjectScout:
     def __init__(self, days: int, use_llm: bool = True, top_n: int = 20, verbose: bool = False, output_format: str = 'table'):
         self.days = days
         self.use_llm = use_llm
@@ -64,7 +64,7 @@ class FounderScout:
         """Main execution flow"""
         start_time = time.time()
         
-        self.console.print(f"\n[bold cyan]🔍 FounderScout - Discovering Overlooked Builders (Last {self.days} days)[/bold cyan]")
+        self.console.print(f"\n[bold cyan]🔍 ProjectScout - Discovering Overlooked Projects (Last {self.days} days)[/bold cyan]")
         self.console.print(f"[dim]Summary Generation: {'Enabled with ' + self.model if self.use_llm else 'Disabled'}[/dim]\n")
         
         with Progress(
@@ -74,11 +74,11 @@ class FounderScout:
         ) as progress:
             
             # Parallel fetch from both sources
-            task = progress.add_task("Searching for founders on HN and GitHub...", total=None)
+            task = progress.add_task("Searching for projects on HN and GitHub...", total=None)
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                hn_future = executor.submit(self.scan_hackernews_for_founders)
-                gh_future = executor.submit(self.scan_github_for_builders)
+                hn_future = executor.submit(self.scan_hackernews_for_projects)
+                gh_future = executor.submit(self.scan_github_for_projects)
                 
                 hn_items = hn_future.result()
                 gh_items = gh_future.result()
@@ -106,7 +106,7 @@ class FounderScout:
                 progress.update(task, completed=True)
         
         # Display results
-        self.display_founders()
+        self.display_projects()
         
         elapsed = time.time() - start_time
         self.console.print(f"\n[dim]Completed in {elapsed:.1f} seconds[/dim]")
@@ -119,7 +119,7 @@ class FounderScout:
         except:
             return None
     
-    def scan_hackernews_for_founders(self) -> List[Dict]:
+    def scan_hackernews_for_projects(self) -> List[Dict]:
         """Scout for interesting builders and projects on HN"""
         builders = []
         cutoff_time = time.time() - (self.days * 86400)
@@ -196,7 +196,7 @@ class FounderScout:
         
         return builders
     
-    def scan_github_for_builders(self) -> List[Dict]:
+    def scan_github_for_projects(self) -> List[Dict]:
         """Scout for interesting projects on GitHub"""
         builders = []
         date_filter = (datetime.now() - timedelta(days=self.days)).strftime('%Y-%m-%d')
@@ -576,7 +576,7 @@ Return a JSON array with one object per item:
         scored_items.sort(key=lambda x: x['total_score'], reverse=True)
         return scored_items
     
-    def display_founders(self):
+    def display_projects(self):
         """Display builders in a clear, readable format"""
         
         if not self.candidates:
@@ -594,7 +594,7 @@ Return a JSON array with one object per item:
     def display_compact(self, display_items):
         """Display in compact one-line format"""
         # Header
-        self.console.print(f"\n[bold cyan]FounderScout - Overlooked Builders[/bold cyan] (Last {self.days} days)\n")
+        self.console.print(f"\n[bold cyan]ProjectScout - Overlooked Projects[/bold cyan] (Last {self.days} days)\n")
         
         for i, item in enumerate(display_items, 1):
             if item['source'] == 'hn':
@@ -621,7 +621,7 @@ Return a JSON array with one object per item:
     def display_cards(self, display_items):
         """Display in card format (default)"""
         # Header
-        self.console.print(f"\n[bold cyan]🔍 FounderScout - Overlooked Builders & Projects[/bold cyan]")
+        self.console.print(f"\n[bold cyan]🔍 ProjectScout - Overlooked Projects & Builders[/bold cyan]")
         self.console.print(f"[dim]Last {self.days} days | Top {len(display_items)} of {len(self.candidates)} found[/dim]\n")
         
         # Display each item in a card-like format
@@ -709,7 +709,7 @@ Return a JSON array with one object per item:
                 else:
                     self.console.print(f"  Link: {item.get('html_url', 'N/A')}")
     
-    def export_json(self, filename: str = "founders.json"):
+    def export_json(self, filename: str = "projects.json"):
         """Export results to JSON"""
         output = {
             "generated_at": datetime.now().isoformat(),
@@ -793,7 +793,7 @@ def main():
     args = parser.parse_args()
     
     # Run scout
-    scout = FounderScout(
+    scout = ProjectScout(
         days=args.days, 
         use_llm=not args.no_llm,
         top_n=args.top,

@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FounderScout is a CLI tool that discovers overlooked builders and interesting projects on Hacker News and GitHub. It scouts for undiscovered founder types by scoring projects based on how overlooked, unique, and passionate they appear, rather than validating "real" founders.
+ProjectScout is a CLI tool that discovers overlooked projects and interesting builders on Hacker News and GitHub. It scouts for undiscovered projects by scoring them based on how overlooked, unique, and passionate they appear.
 
 ## Commands
 
 ### Run the tool
 ```bash
-python3 founder_scout.py --days 7
+python3 project_scout.py --days 7
 ```
 
 ### Common options
@@ -36,7 +36,7 @@ GITHUB_TOKEN=your_github_token_here  # Optional for higher rate limits
 
 ## Architecture
 
-The codebase consists of a single main script `founder_scout.py` with the `FounderScout` class that:
+The codebase consists of a single main script `project_scout.py` with the `ProjectScout` class that:
 
 1. **Data Collection**: Fetches data from Hacker News Firebase API and GitHub API in parallel
    - HN: Searches showstories, askstories, newstories, topstories for builder signals
@@ -60,27 +60,27 @@ The codebase consists of a single main script `founder_scout.py` with the `Found
 4. **Display**: Presents results in a rich table format or exports to JSON
 
 Key methods:
-- `scan_hackernews_for_founders()` - Casts wide net for any builder signals on HN
-- `scan_github_for_builders()` - Finds repos with substantial content
+- `scan_hackernews_for_projects()` - Casts wide net for any project signals on HN
+- `scan_github_for_projects()` - Finds repos with substantial content
 - `score_and_rank_projects()` - Balances passion/effort against engagement
 - `enrich_with_llm()` - Batch post-processing for keywords/summaries (top N only)
-- `display_founders()` - Shows results with score breakdowns and enriched data
+- `display_projects()` - Shows results with score breakdowns and enriched data
 
 ## Testing
 
 To verify functionality:
 ```bash
 # Basic run without LLM
-python3 founder_scout.py --days 1 --no-llm
+python3 project_scout.py --days 1 --no-llm
 
 # With LLM enrichment (requires API key)
-python3 founder_scout.py --days 3 --top 10
+python3 project_scout.py --days 3 --top 10
 
 # Verbose output with score breakdowns
-python3 founder_scout.py --days 7 --verbose
+python3 project_scout.py --days 7 --verbose
 
 # Export to JSON
-python3 founder_scout.py --days 7 --output json > results.json
+python3 project_scout.py --days 7 --output json > results.json
 ```
 
 ## Key Implementation Notes
