@@ -197,7 +197,8 @@ class BuilderScout:
                                     'url': url,
                                     'points': points,
                                     'comments': comments,
-                                    'passion_score': passion_score
+                                    'passion_score': passion_score,
+                                    'time': item.get('time')  # Unix timestamp
                                 }
                                 builder_to_projects[username].append(project)
             
@@ -249,7 +250,8 @@ class BuilderScout:
                                         'url': repo.get('html_url'),
                                         'stars': repo.get('stargazers_count', 0),
                                         'language': repo.get('language'),
-                                        'size': repo.get('size', 0)
+                                        'size': repo.get('size', 0),
+                                        'created_at': repo.get('created_at')  # ISO format datetime
                                     }
                                     builder_to_projects[owner].append(project)
                                     
@@ -582,13 +584,25 @@ Return JSON array with: index, keywords (array), summary (string), vibe (string)
                 if builder.vibe:
                     console.print(f"   [magenta]Vibe: {builder.vibe}[/magenta]")
             
-            # Discovery source
+            # Discovery source with date
             if builder.discovered_projects:
                 project = builder.discovered_projects[0]
                 if project['source'] == 'hn':
-                    source_text = f"HN: {project.get('title', 'Unknown')[:50]}"
+                    # Convert Unix timestamp to date
+                    timestamp = project.get('time')
+                    if timestamp:
+                        date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+                    else:
+                        date = 'Unknown date'
+                    source_text = f"HN post ({date}): {project.get('title', 'Unknown')}"
                 else:
-                    source_text = f"GitHub: {project.get('name', 'Unknown')}"
+                    # Parse ISO format date
+                    created_at = project.get('created_at')
+                    if created_at:
+                        date = datetime.fromisoformat(created_at.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                    else:
+                        date = 'Unknown date'
+                    source_text = f"GitHub repo ({date}): {project.get('name', 'Unknown')}"
                 console.print(f"   [dim]Discovered via: {source_text}[/dim]")
             
             # GitHub profile link
