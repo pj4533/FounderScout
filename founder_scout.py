@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FounderScout - Find actual founders building things on HN and GitHub
+FounderScout - Discover overlooked builders and interesting projects on HN and GitHub
 """
 
 import argparse
@@ -63,8 +63,8 @@ class FounderScout:
         """Main execution flow"""
         start_time = time.time()
         
-        self.console.print(f"\n[bold cyan]🔍 FounderScout - Finding Real Founders (Last {self.days} days)[/bold cyan]")
-        self.console.print(f"[dim]LLM Analysis: {'Enabled with ' + self.model if self.use_llm else 'Disabled'}[/dim]\n")
+        self.console.print(f"\n[bold cyan]🔍 FounderScout - Discovering Overlooked Builders (Last {self.days} days)[/bold cyan]")
+        self.console.print(f"[dim]Summary Generation: {'Enabled with ' + self.model if self.use_llm else 'Disabled'}[/dim]\n")
         
         with Progress(
             SpinnerColumn(),
@@ -87,27 +87,22 @@ class FounderScout:
             # Combine all items
             all_items = hn_items + gh_items
             
-            self.console.print(f"[green]✓[/green] Found {len(hn_items)} potential HN founders and {len(gh_items)} GitHub builders")
+            self.console.print(f"[green]✓[/green] Found {len(hn_items)} HN projects and {len(gh_items)} GitHub repositories")
             
             if not all_items:
-                self.console.print("[yellow]No potential founders found in the specified time range[/yellow]")
+                self.console.print("[yellow]No interesting projects found in the specified time range[/yellow]")
                 return
             
-            # Analyze with LLM to determine founder likelihood
-            if self.use_llm:
-                task = progress.add_task(f"Analyzing {len(all_items)} candidates with {self.model}...", total=len(all_items))
-                all_items = self.analyze_founder_signals(all_items, progress, task)
-                progress.update(task, completed=True)
-            else:
-                # Basic analysis without LLM
-                for item in all_items:
-                    item['why_listed'] = self.get_basic_founder_reason(item)
-                    item['founder_confidence'] = self.calculate_basic_founder_score(item)
-            
-            # Score and rank by founder likelihood
-            task = progress.add_task("Ranking by founder probability...", total=None)
-            self.candidates = self.score_and_filter_founders(all_items)
+            # Score and rank by overlooked/interesting factors
+            task = progress.add_task("Scoring for overlooked gems...", total=None)
+            self.candidates = self.score_and_rank_projects(all_items)
             progress.update(task, completed=True)
+            
+            # Post-process with LLM for better display (top N only)
+            if self.use_llm and self.candidates:
+                task = progress.add_task(f"Generating summaries with {self.model}...", total=1)
+                self.enrich_with_llm(self.candidates[:self.top_n])
+                progress.update(task, completed=True)
         
         # Display results
         self.display_founders()
@@ -124,16 +119,16 @@ class FounderScout:
             return None
     
     def scan_hackernews_for_founders(self) -> List[Dict]:
-        """Specifically look for founders on HN"""
-        founders = []
+        """Scout for interesting builders and projects on HN"""
+        builders = []
         cutoff_time = time.time() - (self.days * 86400)
         
-        # Prioritize Show HN and Ask HN posts
+        # Cast a wider net for interesting projects
         sources = {
-            "showstories": 1.5,  # Show HN gets a boost
-            "askstories": 1.0,   # Ask HN might have founders
-            "newstories": 0.7,   # New stories
-            "topstories": 0.5,   # Top stories less likely
+            "showstories": 1.0,  # Show HN - people building things
+            "askstories": 1.0,   # Ask HN - seeking advice/validation
+            "newstories": 1.0,   # New stories - fresh content
+            "topstories": 0.5,   # Top stories - may be too popular
         }
         
         for source, weight in sources.items():
@@ -148,50 +143,60 @@ class FounderScout:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                     stories = list(executor.map(self.fetch_hn_item, story_ids))
                 
-                # Filter for founder signals
+                # Look for any builder signals (more inclusive)
                 for story in stories:
                     if not story or story.get('time', 0) <= cutoff_time:
                         continue
                     
                     title = story.get('title', '').lower()
                     text = story.get('text', '').lower()
+                    combined = title + ' ' + text
                     
-                    # Strong founder indicators
-                    is_founder = False
-                    founder_signal = ""
+                    # Builder indicators (more inclusive)
+                    builder_signal = ""
                     
+                    # Priority signals
                     if 'show hn:' in title:
-                        is_founder = True
-                        founder_signal = "Show HN post"
-                    elif any(phrase in title + text for phrase in [
+                        builder_signal = "Show HN - presenting project"
+                    elif any(phrase in combined for phrase in [
                         'i built', 'i made', 'i created', 'we built', 'we made',
-                        'my startup', 'my project', 'my app', 'our startup',
-                        'launching', 'just launched', 'soft launch', 'beta launch',
-                        'seeking feedback', 'looking for users', 'early access'
+                        'my project', 'our project', 'side project', 'weekend project',
+                        'open source', 'open-source', 'released', 'announcing'
                     ]):
-                        is_founder = True
-                        founder_signal = "Founder language detected"
+                        builder_signal = "Building/releasing something"
+                    elif any(phrase in combined for phrase in [
+                        'working on', 'developing', 'creating', 'building',
+                        'launched', 'launching', 'shipped', 'beta', 'alpha', 'mvp',
+                        'prototype', 'proof of concept', 'experiment', 'tool', 'app'
+                    ]):
+                        builder_signal = "Active development"
                     elif 'ask hn:' in title and any(phrase in title for phrase in [
-                        'feedback', 'validate', 'idea', 'startup', 'building', 'launch'
+                        'feedback', 'validate', 'idea', 'startup', 'building', 
+                        'project', 'launch', 'advice', 'thoughts'
                     ]):
-                        is_founder = True
-                        founder_signal = "Asking for startup advice"
+                        builder_signal = "Seeking validation/feedback"
+                    elif any(phrase in combined for phrase in [
+                        'github.com', 'gitlab.com', 'demo', 'try it',
+                        'check it out', 'live at', 'available at'
+                    ]):
+                        builder_signal = "Sharing project link"
                     
-                    if is_founder:
+                    # Accept more posts, let scoring determine quality
+                    if builder_signal:
                         story['source'] = 'hn'
                         story['source_type'] = source
-                        story['weight'] = weight
-                        story['founder_signal'] = founder_signal
-                        founders.append(story)
+                        story['source_weight'] = weight
+                        story['builder_signal'] = builder_signal
+                        builders.append(story)
                         
             except Exception as e:
                 if self.verbose:
                     self.console.print(f"[yellow]Failed to fetch {source}: {e}[/yellow]")
         
-        return founders
+        return builders
     
     def scan_github_for_builders(self) -> List[Dict]:
-        """Find people actively building on GitHub"""
+        """Scout for interesting projects on GitHub"""
         builders = []
         date_filter = (datetime.now() - timedelta(days=self.days)).strftime('%Y-%m-%d')
         
@@ -199,11 +204,17 @@ class FounderScout:
         if self.github_token:
             headers['Authorization'] = f'token {self.github_token}'
         
-        # Look for new projects with good indicators
+        # Cast wider net for interesting projects
         queries = [
-            f"created:>{date_filter} stars:<20",  # New projects, not yet popular
-            f"pushed:>{date_filter} created:>{date_filter}",  # Brand new and active
+            f"created:>{date_filter} stars:<100",  # New projects, not yet viral
+            f"pushed:>{date_filter} stars:<50",  # Recently active, overlooked
+            f"created:>{date_filter} language:Rust",  # New Rust projects (often interesting)
+            f"created:>{date_filter} language:Zig",  # New Zig projects (cutting edge)
+            f"created:>{date_filter} topic:tool",  # Developer tools
+            f"created:>{date_filter} topic:cli",  # CLI tools
         ]
+        
+        seen_repos = set()  # Avoid duplicates
         
         for query in queries:
             try:
@@ -213,7 +224,7 @@ class FounderScout:
                         'q': query,
                         'sort': 'updated',
                         'order': 'desc',
-                        'per_page': 50
+                        'per_page': 30
                     },
                     headers=headers,
                     timeout=10
@@ -222,31 +233,36 @@ class FounderScout:
                 if response.ok:
                     data = response.json()
                     for repo in data.get('items', []):
-                        # Look for signs of a real project
-                        description = (repo.get('description') or '').lower()
-                        has_description = len(description) > 20
-                        has_readme = repo.get('size', 0) > 10  # Proxy for having content
+                        # Skip if we've already seen this repo
+                        repo_id = repo.get('id')
+                        if repo_id in seen_repos:
+                            continue
+                        seen_repos.add(repo_id)
                         
-                        # Check for founder-like descriptions
-                        founder_keywords = [
-                            'my first', 'learning', 'experiment', 'building',
-                            'wip', 'work in progress', 'side project', 'hobby',
-                            'mvp', 'prototype', 'beta', 'alpha', 'v0'
-                        ]
+                        # Look for signs of an interesting project
+                        description = (repo.get('description') or '')
+                        has_description = len(description) > 10
                         
-                        is_likely_founder = (
-                            has_description and 
-                            has_readme and
-                            (any(kw in description for kw in founder_keywords) or
-                             repo.get('stargazers_count', 0) < 10)
-                        )
-                        
-                        if is_likely_founder:
+                        # More inclusive - any repo with description and content
+                        if has_description and repo.get('size', 0) > 5:
                             repo['source'] = 'github'
                             repo['time'] = int(datetime.fromisoformat(
                                 repo['created_at'].replace('Z', '+00:00')
                             ).timestamp())
-                            repo['founder_signal'] = "New active repository"
+                            
+                            # Categorize the signal
+                            desc_lower = description.lower()
+                            if any(kw in desc_lower for kw in ['experiment', 'learning', 'toy', 'fun']):
+                                repo['builder_signal'] = "Experimental project"
+                            elif any(kw in desc_lower for kw in ['tool', 'cli', 'library', 'framework']):
+                                repo['builder_signal'] = "Developer tool"
+                            elif any(kw in desc_lower for kw in ['app', 'application', 'platform']):
+                                repo['builder_signal'] = "Application/platform"
+                            elif any(kw in desc_lower for kw in ['game', 'puzzle', 'simulator']):
+                                repo['builder_signal'] = "Game/entertainment"
+                            else:
+                                repo['builder_signal'] = "Active project"
+                            
                             builders.append(repo)
                             
             except Exception as e:
@@ -255,274 +271,304 @@ class FounderScout:
         
         return builders
     
-    def analyze_founder_signals(self, items: List[Dict], progress: Progress, task_id) -> List[Dict]:
-        """Use LLM to analyze founder likelihood"""
+    def enrich_with_llm(self, items: List[Dict]):
+        """Post-process top results with LLM for keywords and summaries"""
         
-        def analyze_item(item):
-            try:
-                analysis = self.analyze_with_llm(item)
-                item['why_listed'] = analysis['why_listed']
-                item['founder_confidence'] = analysis['founder_confidence']
-                item['tech_stack'] = analysis.get('tech_stack', [])
-                item['project_stage'] = analysis.get('stage', 'Unknown')
-            except Exception as e:
-                if self.verbose:
-                    self.console.print(f"[yellow]Analysis failed: {e}[/yellow]")
-                item['why_listed'] = item.get('founder_signal', 'Potential founder activity')
-                item['founder_confidence'] = 0.5
-                item['tech_stack'] = []
-                item['project_stage'] = 'Unknown'
-            
-            progress.update(task_id, advance=1)
-            return item
-        
-        # Process items sequentially for GPT-5 (to avoid rate limits)
-        # Can change back to parallel with ThreadPoolExecutor if needed
+        # Prepare batch request
+        batch_context = []
         for i, item in enumerate(items):
-            items[i] = analyze_item(item)
+            if item['source'] == 'hn':
+                title = item.get('title', '')
+                text = item.get('text', '')[:500]  # Limit text
+                url = item.get('url', '')
+                context = f"Item {i+1} (HN): {title}\n{text}\nURL: {url}"
+            else:  # github
+                name = item.get('name', '')
+                description = item.get('description', '')
+                url = item.get('html_url', '')
+                lang = item.get('language', 'Unknown')
+                context = f"Item {i+1} (GitHub): {name}\n{description}\nLanguage: {lang}\nURL: {url}"
+            batch_context.append(context)
         
-        return items
-    
-    def analyze_with_llm(self, item: Dict) -> Dict:
-        """Use GPT-5 to determine if this is a real founder"""
-        
-        # Prepare context
-        if item['source'] == 'hn':
-            title = item.get('title', '')
-            description = item.get('text', '')
-            url = item.get('url', '')
-            author = item.get('by', '')
-            context = f"HN Post by {author}: {title}\n{description}\nURL: {url}"
-        else:  # github
-            name = item.get('name', '')
-            description = item.get('description', '')
-            url = item.get('html_url', '')
-            author = item.get('owner', {}).get('login', '')
-            context = f"GitHub Repo by {author}: {name}\n{description}\nURL: {url}"
-        
-        # Remove HTML tags
-        context = re.sub('<[^<]+?>', '', context)
-        
-        prompt = f"""
-        Analyze if this is a REAL FOUNDER building something. Be skeptical.
-        
-        Context: {context[:1500]}
-        
-        Determine:
-        1. Is this actually someone building/launching something? (not just sharing an article)
-        2. What are they building? (one sentence)
-        3. What stage? (idea/building/launched/established)
-        4. Tech stack if mentioned
-        5. Confidence score (0-1) that this is a real founder
-        
-        Return JSON:
-        {{
-            "is_founder": true/false,
-            "why_listed": "One sentence explaining why this person appears to be building something",
-            "founder_confidence": 0.0-1.0,
-            "tech_stack": ["tech1", "tech2"],
-            "stage": "idea/building/launched/established",
-            "what_building": "One sentence description"
-        }}
-        """
+        # Create batch prompt
+        prompt = f"""Analyze these {len(items)} projects and extract keywords and create a brief summary for each.
+
+For each item, provide:
+1. Keywords: 3-5 technical/domain keywords
+2. Summary: One sentence about what makes this interesting or unique
+3. Vibe: The creator's energy (passionate/exploratory/pragmatic/playful/serious)
+
+{chr(10).join(batch_context[:self.top_n])}
+
+Return a JSON array with one object per item:
+[
+  {{
+    "item": 1,
+    "keywords": ["keyword1", "keyword2"],
+    "summary": "Brief summary of what makes this interesting",
+    "vibe": "passionate/exploratory/pragmatic/playful/serious"
+  }},
+  ...
+]"""
         
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert at identifying real founders and builders. Be skeptical - most HN posts are NOT founders. Always respond with valid JSON."},
+                    {"role": "system", "content": "You analyze projects to find what makes them interesting or unique. Focus on the unusual, overlooked, or passionate aspects."},
                     {"role": "user", "content": prompt}
                 ]
-                # Removed all optional parameters - GPT-5 works best with defaults
+                # Removed temperature parameter as it's not supported by all models
             )
             
-            # Debug: show what we got
             content = response.choices[0].message.content
-            if not content:
-                self.console.print(f"[yellow]Empty response for {author}[/yellow]")
-                return {
-                    'why_listed': 'Empty LLM response',
-                    'founder_confidence': 0.3,
-                    'tech_stack': [],
-                    'stage': 'Unknown'
-                }
-            
-            # Don't print content in normal mode, too verbose
-            
-            result = json.loads(content)
-            
-            # If not a founder, mark it clearly
-            if not result.get('is_founder', False):
-                result['founder_confidence'] = 0.0
-                result['why_listed'] = "Not a founder - " + result.get('why_listed', 'Just sharing content')
-            
-            return result
-            
+            if content:
+                if self.verbose:
+                    self.console.print(f"[dim]LLM response received: {len(content)} chars[/dim]")
+                results = json.loads(content)
+                # Map results back to items
+                for result in results:
+                    idx = result['item'] - 1
+                    if 0 <= idx < len(items):
+                        items[idx]['keywords'] = result.get('keywords', [])
+                        items[idx]['summary'] = result.get('summary', items[idx].get('builder_signal', ''))
+                        items[idx]['vibe'] = result.get('vibe', 'unknown')
+            else:
+                if self.verbose:
+                    self.console.print(f"[yellow]Empty LLM response[/yellow]")
+        except json.JSONDecodeError as e:
+            if self.verbose:
+                self.console.print(f"[yellow]JSON decode error: {e}[/yellow]")
+                self.console.print(f"[yellow]Response: {content[:500]}...[/yellow]")
         except Exception as e:
             if self.verbose:
-                self.console.print(f"[yellow]LLM error for {author}: {str(e)[:100]}[/yellow]")
-            return {
-                'why_listed': 'Analysis error',
-                'founder_confidence': 0.3,
-                'tech_stack': [],
-                'stage': 'Unknown'
-            }
+                self.console.print(f"[yellow]LLM enrichment failed: {e}[/yellow]")
+            # Fall back to basic enrichment
+            for item in items:
+                item['keywords'] = []
+                item['summary'] = item.get('builder_signal', 'Interesting project')
+                item['vibe'] = 'unknown'
     
-    def get_basic_founder_reason(self, item: Dict) -> str:
-        """Get founder reason without LLM"""
-        if item['source'] == 'hn':
-            title = item.get('title', '').lower()
-            if 'show hn:' in title:
-                return "Show HN - presenting their project"
-            elif 'i built' in title or 'i made' in title:
-                return "Built something and sharing it"
-            elif 'ask hn:' in title:
-                return "Asking for feedback on their idea"
-            else:
-                return item.get('founder_signal', 'Possible founder activity')
-        else:
-            return "New GitHub project with activity"
+    # Removed analyze_with_llm - no longer needed
     
-    def calculate_basic_founder_score(self, item: Dict) -> float:
-        """Calculate founder confidence without LLM"""
-        score = 0.3  # Base score
-        
-        if item['source'] == 'hn':
-            title = item.get('title', '').lower()
-            text = item.get('text', '').lower()
-            combined = title + ' ' + text
-            
-            # Strong signals
-            if 'show hn:' in title:
-                score += 0.4
-            if any(x in combined for x in ['i built', 'i made', 'we built', 'we made']):
-                score += 0.3
-            if any(x in combined for x in ['launch', 'beta', 'mvp', 'prototype']):
-                score += 0.2
-                
-            # Weak signals
-            if item.get('descendants', 0) > 0:  # Has comments
-                score += 0.1
-                
-        else:  # GitHub
-            if item.get('stargazers_count', 0) < 10:
-                score += 0.2  # Low visibility
-            if item.get('description'):
-                score += 0.2
-        
-        return min(score, 1.0)
+    # Removed get_basic_founder_reason and calculate_basic_founder_score - no longer needed
     
-    def score_and_filter_founders(self, items: List[Dict]) -> List[Dict]:
-        """Score and filter to only show likely founders"""
+    def score_and_rank_projects(self, items: List[Dict]) -> List[Dict]:
+        """Score projects based on how overlooked and interesting they are"""
         
         scored_items = []
         for item in items:
-            # Skip if definitely not a founder
-            if item.get('founder_confidence', 0) < 0.2:
-                continue
+            scores = {}
             
-            # Calculate overlooked score
             if item['source'] == 'hn':
-                visibility = item.get('score', 0)  # HN points
-                activity = item.get('descendants', 0)  # Comments
-            else:
-                visibility = item.get('stargazers_count', 0)
-                activity = item.get('forks_count', 0) + item.get('watchers_count', 0)
+                points = item.get('score', 0)
+                comments = item.get('descendants', 0)
+                
+                # Overlooked score (low visibility is good)
+                if points < 5:
+                    scores['overlooked'] = 1.0
+                elif points < 20:
+                    scores['overlooked'] = 0.7
+                elif points < 50:
+                    scores['overlooked'] = 0.4
+                else:
+                    scores['overlooked'] = max(0, 1 - (points / 200))
+                
+                # Engagement score (some discussion is good, too much means not overlooked)
+                if 0 < comments <= 10:
+                    scores['engagement'] = 0.8
+                elif comments <= 30:
+                    scores['engagement'] = 0.5
+                else:
+                    scores['engagement'] = 0.2
+                
+                # Passion indicators
+                title_lower = item.get('title', '').lower()
+                text_lower = item.get('text', '').lower()
+                combined = title_lower + ' ' + text_lower
+                
+                passion_words = ['excited', 'love', 'passionate', 'obsessed', 'finally',
+                                  'proud', 'happy', 'spent months', 'spent years', 'dream']
+                scores['passion'] = min(sum(1 for word in passion_words if word in combined) * 0.3, 1.0)
+                
+                # Weird/unique factor
+                weird_words = ['weird', 'unusual', 'strange', 'different', 'unique', 'niche',
+                               'experimental', 'crazy', 'stupid', 'useless', 'fun', 'toy']
+                scores['weird'] = min(sum(1 for word in weird_words if word in combined) * 0.25, 1.0)
+                
+                # Show HN bonus
+                if 'show hn:' in title_lower:
+                    scores['builder'] = 0.8
+                elif 'ask hn:' in title_lower:
+                    scores['builder'] = 0.3
+                else:
+                    scores['builder'] = 0.5
+                    
+            else:  # GitHub
+                stars = item.get('stargazers_count', 0)
+                forks = item.get('forks_count', 0)
+                size = item.get('size', 0)
+                
+                # Overlooked score
+                if stars < 10:
+                    scores['overlooked'] = 1.0
+                elif stars < 50:
+                    scores['overlooked'] = 0.7
+                elif stars < 200:
+                    scores['overlooked'] = 0.4
+                else:
+                    scores['overlooked'] = max(0, 1 - (stars / 1000))
+                
+                # Completeness (bigger repos might be more complete)
+                if size > 1000:
+                    scores['completeness'] = 0.8
+                elif size > 100:
+                    scores['completeness'] = 0.5
+                else:
+                    scores['completeness'] = 0.2
+                
+                # Activity (forks show interest)
+                scores['engagement'] = min(forks * 0.2, 1.0)
+                
+                # Language bonus for interesting techs
+                interesting_langs = ['Rust', 'Zig', 'Nim', 'Haskell', 'Erlang', 'Elixir',
+                                     'Crystal', 'V', 'Odin', 'Julia', 'OCaml']
+                lang = item.get('language', '')
+                if lang in interesting_langs:
+                    scores['weird'] = 0.7
+                else:
+                    scores['weird'] = 0.2
+                
+                scores['builder'] = 0.6  # GitHub repos show building
+                scores['passion'] = 0.3  # Hard to detect passion from repo alone
             
-            # Lower visibility is better for finding overlooked founders
-            visibility_score = max(0, 1 - (visibility / 50))
+            # Calculate weighted total
+            weights = {
+                'overlooked': 0.35,  # Most important - finding hidden gems
+                'weird': 0.20,       # Unique/interesting projects
+                'passion': 0.15,     # Creator enthusiasm
+                'builder': 0.15,     # Actually building something
+                'engagement': 0.10,  # Some activity/interest
+                'completeness': 0.05 # For GitHub repos
+            }
             
-            # Higher founder confidence is better
-            founder_score = item.get('founder_confidence', 0.5)
-            
-            # Activity shows engagement
-            activity_score = min(activity / 10, 1.0)
-            
-            # Weight towards actual founders
-            total_score = (
-                founder_score * 0.6 +  # Most important: are they a founder?
-                visibility_score * 0.3 +  # Overlooked is good
-                activity_score * 0.1  # Some activity is good
-            )
-            
-            item['total_score'] = round(total_score, 2)
+            total = sum(scores.get(factor, 0) * weight for factor, weight in weights.items())
+            item['total_score'] = round(total, 2)
+            item['score_breakdown'] = scores
             scored_items.append(item)
         
-        # Sort by score and take top N
+        # Sort by score
         scored_items.sort(key=lambda x: x['total_score'], reverse=True)
-        return scored_items[:self.top_n]
+        return scored_items
     
     def display_founders(self):
-        """Display founders in a clear, readable table"""
+        """Display builders in a clear, readable table"""
         
         if not self.candidates:
-            self.console.print("[yellow]No founders found. Try increasing the time range or adjusting filters.[/yellow]")
+            self.console.print("[yellow]No interesting projects found. Try increasing the time range.[/yellow]")
             return
         
-        # Create table with better column sizing
+        # Limit display to top N
+        display_items = self.candidates[:self.top_n]
+        
+        # Create table
         table = Table(
-            title=f"\n[bold]FounderScout - Real Builders & Founders[/bold]\n[dim]Last {self.days} days | {len(self.candidates)} founders found[/dim]",
+            title=f"\n[bold]FounderScout - Overlooked Builders & Projects[/bold]\n[dim]Last {self.days} days | Top {len(display_items)} of {len(self.candidates)} found[/dim]",
             show_header=True,
             header_style="bold cyan",
             title_justify="center",
-            expand=True  # Allow table to expand to terminal width
+            expand=True
         )
         
-        # Add columns without fixed widths to let Rich handle sizing
+        # Add columns
         table.add_column("#", style="dim", no_wrap=True)
         table.add_column("Score", style="magenta", no_wrap=True)
-        table.add_column("Platform", style="yellow", no_wrap=True)
-        table.add_column("Who", style="bright_blue", overflow="ellipsis")
-        table.add_column("What They're Building", style="green", overflow="ellipsis")
-        table.add_column("Why Listed", style="white", overflow="ellipsis")
-        table.add_column("Activity", style="dim", no_wrap=True)
+        table.add_column("Source", style="yellow", no_wrap=True)
+        table.add_column("Creator", style="bright_blue", overflow="ellipsis")
+        table.add_column("Project", style="green", overflow="ellipsis")
+        table.add_column("What's Interesting", style="white", overflow="ellipsis")
+        table.add_column("Stats", style="dim", no_wrap=True)
+        if self.use_llm:
+            table.add_column("Keywords", style="cyan", overflow="ellipsis")
         
         # Add rows
-        for i, item in enumerate(self.candidates, 1):
+        for i, item in enumerate(display_items, 1):
             if item['source'] == 'hn':
                 who = item.get('by', 'Unknown')
                 what = item.get('title', 'No title')
                 if 'show hn:' in what.lower():
-                    what = what.split(':', 1)[1].strip()  # Remove "Show HN:" prefix
-                activity = f"{item.get('score', 0)}pts {item.get('descendants', 0)}cmt"
+                    what = what.split(':', 1)[1].strip()
+                elif 'ask hn:' in what.lower():
+                    what = what.split(':', 1)[1].strip()
+                stats = f"{item.get('score', 0)}pts {item.get('descendants', 0)}cmt"
             else:
                 who = item.get('owner', {}).get('login', 'Unknown')
                 what = item.get('name', 'No name')
                 if item.get('description'):
-                    what = f"{what}: {item.get('description', '')[:50]}"
-                activity = f"{item.get('stargazers_count', 0)}★ {item.get('forks_count', 0)}forks"
+                    desc = item.get('description', '')[:40]
+                    what = f"{what}: {desc}"
+                lang = item.get('language', '')
+                if lang:
+                    stats = f"{item.get('stargazers_count', 0)}★ {lang[:8]}"
+                else:
+                    stats = f"{item.get('stargazers_count', 0)}★"
             
-            why = item.get('why_listed', 'Potential founder')[:45]
-            score = f"{item.get('total_score', 0):.1f}"
+            # Use LLM summary if available, otherwise builder signal
+            interesting = item.get('summary', item.get('builder_signal', 'Interesting project'))[:50]
+            score = f"{item.get('total_score', 0):.2f}"
             
-            # Truncate long strings for better display
-            what = what[:50] if len(what) > 50 else what
+            # Truncate for display
+            what = what[:45] if len(what) > 45 else what
             
-            # Add row
-            table.add_row(
+            # Build row
+            row = [
                 str(i),
                 score,
                 item['source'].upper(),
                 who[:12],
                 what,
-                why,
-                activity
-            )
+                interesting,
+                stats
+            ]
+            
+            # Add keywords if available
+            if self.use_llm:
+                keywords = item.get('keywords', [])
+                if keywords:
+                    row.append(', '.join(keywords[:3]))
+                else:
+                    row.append('')
+            
+            table.add_row(*row)
         
         self.console.print(table)
         
-        # Add helpful context
-        self.console.print("\n[dim]Score: Founder Confidence (0-1) × Low Visibility Bonus × Activity[/dim]")
-        self.console.print("[dim]Higher scores = more likely to be overlooked founders building something interesting[/dim]")
+        # Score explanation
+        self.console.print("\n[dim]Scoring: Overlooked (35%) + Unique/Weird (20%) + Passion (15%) + Builder (15%) + Engagement (10%)[/dim]")
+        self.console.print("[dim]Higher scores = more likely to be an overlooked gem worth exploring[/dim]")
         
         # Show details for top 3 if verbose
-        if self.verbose and len(self.candidates) > 0:
-            self.console.print("\n[bold]Top Founder Details:[/bold]")
-            for item in self.candidates[:3]:
+        if self.verbose and len(display_items) > 0:
+            self.console.print("\n[bold]Top Project Details:[/bold]")
+            for item in display_items[:3]:
                 self.console.print(f"\n[green]→ {item.get('by', item.get('owner', {}).get('login', 'Unknown'))}[/green]")
-                self.console.print(f"  [white]{item.get('why_listed', 'No details')}[/white]")
-                if item.get('tech_stack'):
-                    self.console.print(f"  Tech: {', '.join(item['tech_stack'][:5])}")
+                
+                # Show score breakdown
+                if 'score_breakdown' in item:
+                    scores = item['score_breakdown']
+                    self.console.print(f"  Scores: Overlooked={scores.get('overlooked', 0):.1f}, "
+                                      f"Weird={scores.get('weird', 0):.1f}, "
+                                      f"Passion={scores.get('passion', 0):.1f}")
+                
+                # Show vibe if available
+                if 'vibe' in item:
+                    self.console.print(f"  Vibe: {item['vibe']}")
+                
+                # Show keywords
+                if item.get('keywords'):
+                    self.console.print(f"  Keywords: {', '.join(item['keywords'])}")
+                
+                # Show link
                 if item['source'] == 'hn':
                     self.console.print(f"  Link: https://news.ycombinator.com/item?id={item['id']}")
                 else:
@@ -536,20 +582,22 @@ class FounderScout:
                 "days": self.days,
                 "max_results": self.top_n
             },
-            "founders": []
+            "projects": []
         }
         
-        for i, item in enumerate(self.candidates, 1):
-            founder = {
+        for i, item in enumerate(self.candidates[:self.top_n], 1):
+            project = {
                 "rank": i,
                 "score": item.get('total_score', 0),
                 "platform": item['source'],
-                "why_listed": item.get('why_listed', ''),
-                "founder_confidence": item.get('founder_confidence', 0)
+                "summary": item.get('summary', item.get('builder_signal', '')),
+                "keywords": item.get('keywords', []),
+                "vibe": item.get('vibe', 'unknown'),
+                "score_breakdown": item.get('score_breakdown', {})
             }
             
             if item['source'] == 'hn':
-                founder.update({
+                project.update({
                     "author": item.get('by'),
                     "title": item.get('title'),
                     "url": f"https://news.ycombinator.com/item?id={item['id']}",
@@ -557,16 +605,17 @@ class FounderScout:
                     "comments": item.get('descendants', 0)
                 })
             else:
-                founder.update({
+                project.update({
                     "author": item.get('owner', {}).get('login'),
                     "repo": item.get('name'),
                     "description": item.get('description'),
                     "url": item.get('html_url'),
+                    "language": item.get('language'),
                     "stars": item.get('stargazers_count', 0),
                     "forks": item.get('forks_count', 0)
                 })
             
-            output['founders'].append(founder)
+            output['projects'].append(project)
         
         with open(filename, 'w') as f:
             json.dump(output, f, indent=2)
@@ -575,7 +624,7 @@ class FounderScout:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Find real founders and builders on HN and GitHub'
+        description='Discover overlooked builders and interesting projects on HN and GitHub'
     )
     parser.add_argument(
         '--days', 
@@ -586,7 +635,7 @@ def main():
     parser.add_argument(
         '--no-llm',
         action='store_true',
-        help='Skip GPT-5 analysis (faster but less accurate)'
+        help='Skip LLM keyword/summary generation (faster but less detailed)'
     )
     parser.add_argument(
         '--output',
