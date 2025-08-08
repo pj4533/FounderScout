@@ -32,11 +32,12 @@ HN_BASE_URL = "https://hacker-news.firebaseio.com/v0"
 GITHUB_BASE_URL = "https://api.github.com"
 
 class FounderScout:
-    def __init__(self, days: int, use_llm: bool = True, top_n: int = 20, verbose: bool = False):
+    def __init__(self, days: int, use_llm: bool = True, top_n: int = 20, verbose: bool = False, output_format: str = 'table'):
         self.days = days
         self.use_llm = use_llm
         self.top_n = top_n
         self.verbose = verbose
+        self.output_format = output_format
         self.console = Console()
         self.candidates = []
         
@@ -462,7 +463,7 @@ Return a JSON array with one object per item:
         return scored_items
     
     def display_founders(self):
-        """Display builders in a clear, readable table"""
+        """Display builders in a clear, readable format"""
         
         if not self.candidates:
             self.console.print("[yellow]No interesting projects found. Try increasing the time range.[/yellow]")
@@ -471,27 +472,16 @@ Return a JSON array with one object per item:
         # Limit display to top N
         display_items = self.candidates[:self.top_n]
         
-        # Create table
-        table = Table(
-            title=f"\n[bold]FounderScout - Overlooked Builders & Projects[/bold]\n[dim]Last {self.days} days | Top {len(display_items)} of {len(self.candidates)} found[/dim]",
-            show_header=True,
-            header_style="bold cyan",
-            title_justify="center",
-            expand=True
-        )
+        if self.output_format == 'compact':
+            self.display_compact(display_items)
+        else:
+            self.display_cards(display_items)
+    
+    def display_compact(self, display_items):
+        """Display in compact one-line format"""
+        # Header
+        self.console.print(f"\n[bold cyan]FounderScout - Overlooked Builders[/bold cyan] (Last {self.days} days)\n")
         
-        # Add columns
-        table.add_column("#", style="dim", no_wrap=True)
-        table.add_column("Score", style="magenta", no_wrap=True)
-        table.add_column("Source", style="yellow", no_wrap=True)
-        table.add_column("Creator", style="bright_blue", overflow="ellipsis")
-        table.add_column("Project", style="green", overflow="ellipsis")
-        table.add_column("What's Interesting", style="white", overflow="ellipsis")
-        table.add_column("Stats", style="dim", no_wrap=True)
-        if self.use_llm:
-            table.add_column("Keywords", style="cyan", overflow="ellipsis")
-        
-        # Add rows
         for i, item in enumerate(display_items, 1):
             if item['source'] == 'hn':
                 who = item.get('by', 'Unknown')
@@ -500,48 +490,79 @@ Return a JSON array with one object per item:
                     what = what.split(':', 1)[1].strip()
                 elif 'ask hn:' in what.lower():
                     what = what.split(':', 1)[1].strip()
-                stats = f"{item.get('score', 0)}pts {item.get('descendants', 0)}cmt"
+                url = f"https://news.ycombinator.com/item?id={item['id']}"
             else:
                 who = item.get('owner', {}).get('login', 'Unknown')
                 what = item.get('name', 'No name')
-                if item.get('description'):
-                    desc = item.get('description', '')[:40]
-                    what = f"{what}: {desc}"
+                url = item.get('html_url', 'N/A')
+            
+            score_color = "bright_magenta" if item.get('total_score', 0) > 0.7 else "magenta"
+            source = item['source'].upper()
+            
+            # One-line format
+            self.console.print(f"{i:2}. [{score_color}]{item.get('total_score', 0):.2f}[/{score_color}] [{source:6}] [bright_blue]{who:15}[/bright_blue] [green]{what[:60]:60}[/green] [dim]{url}[/dim]")
+        
+        self.console.print("\n[dim]Higher scores = more overlooked gems[/dim]")
+    
+    def display_cards(self, display_items):
+        """Display in card format (default)"""
+        # Header
+        self.console.print(f"\n[bold cyan]🔍 FounderScout - Overlooked Builders & Projects[/bold cyan]")
+        self.console.print(f"[dim]Last {self.days} days | Top {len(display_items)} of {len(self.candidates)} found[/dim]\n")
+        
+        # Display each item in a card-like format
+        for i, item in enumerate(display_items, 1):
+            # Rank and Score
+            score_color = "bright_magenta" if item.get('total_score', 0) > 0.7 else "magenta"
+            self.console.print(f"[bold]{i}.[/bold] [bold {score_color}]Score: {item.get('total_score', 0):.2f}[/bold {score_color}]", end="  ")
+            
+            # Source badge
+            source_badge = f"[yellow][{item['source'].upper()}][/yellow]"
+            self.console.print(source_badge)
+            
+            # Project title and creator
+            if item['source'] == 'hn':
+                who = item.get('by', 'Unknown')
+                what = item.get('title', 'No title')
+                if 'show hn:' in what.lower():
+                    what = what.split(':', 1)[1].strip()
+                elif 'ask hn:' in what.lower():
+                    what = what.split(':', 1)[1].strip()
+                stats = f"{item.get('score', 0)}pts, {item.get('descendants', 0)}cmt"
+                url = f"https://news.ycombinator.com/item?id={item['id']}"
+            else:
+                who = item.get('owner', {}).get('login', 'Unknown')
+                what = item.get('name', 'No name')
                 lang = item.get('language', '')
+                stats = f"{item.get('stargazers_count', 0)}★"
                 if lang:
-                    stats = f"{item.get('stargazers_count', 0)}★ {lang[:8]}"
-                else:
-                    stats = f"{item.get('stargazers_count', 0)}★"
+                    stats += f", {lang}"
+                url = item.get('html_url', 'N/A')
             
-            # Use LLM summary if available, otherwise builder signal
-            interesting = item.get('summary', item.get('builder_signal', 'Interesting project'))[:50]
-            score = f"{item.get('total_score', 0):.2f}"
+            # Title line
+            self.console.print(f"   [bold green]{what}[/bold green] by [bright_blue]{who}[/bright_blue]")
             
-            # Truncate for display
-            what = what[:45] if len(what) > 45 else what
+            # Description/Summary
+            if item.get('source') == 'github' and item.get('description'):
+                self.console.print(f"   [white]{item.get('description')}[/white]")
             
-            # Build row
-            row = [
-                str(i),
-                score,
-                item['source'].upper(),
-                who[:12],
-                what,
-                interesting,
-                stats
-            ]
+            # What's interesting (from LLM or builder signal)
+            interesting = item.get('summary', item.get('builder_signal', 'Interesting project'))
+            if interesting:
+                self.console.print(f"   [italic]💡 {interesting}[/italic]")
             
-            # Add keywords if available
-            if self.use_llm:
+            # Keywords if available
+            if self.use_llm and item.get('keywords'):
                 keywords = item.get('keywords', [])
                 if keywords:
-                    row.append(', '.join(keywords[:3]))
-                else:
-                    row.append('')
+                    self.console.print(f"   [cyan]Tags: {', '.join(keywords)}[/cyan]")
             
-            table.add_row(*row)
-        
-        self.console.print(table)
+            # Stats and link
+            self.console.print(f"   [dim]{stats} | {url}[/dim]")
+            
+            # Separator between items (except last)
+            if i < len(display_items):
+                self.console.print()
         
         # Score explanation
         self.console.print("\n[dim]Scoring: Overlooked (35%) + Unique/Weird (20%) + Passion (15%) + Builder (15%) + Engagement (10%)[/dim]")
@@ -639,9 +660,9 @@ def main():
     )
     parser.add_argument(
         '--output',
-        choices=['table', 'json'],
+        choices=['table', 'json', 'compact'],
         default='table',
-        help='Output format (default: table)'
+        help='Output format: table (default card view), compact (one-line), json'
     )
     parser.add_argument(
         '--top',
@@ -662,7 +683,8 @@ def main():
         days=args.days, 
         use_llm=not args.no_llm,
         top_n=args.top,
-        verbose=args.verbose
+        verbose=args.verbose,
+        output_format=args.output
     )
     scout.run()
     
