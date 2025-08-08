@@ -3,8 +3,61 @@
 **Discover overlooked projects and prolific builders on Hacker News and GitHub**
 
 FounderScout contains two powerful tools for finding hidden gems in the developer community:
-- **Project Scout** - Finds passionate projects with low engagement (overlooked gems)
 - **Builder Scout** - Discovers prolific builders working on overlooked projects
+- **Project Scout** - Finds passionate projects with low engagement (overlooked gems)
+
+---
+
+## 🔨 Builder Scout
+
+Identifies talented developers who are actively building but haven't gained recognition yet. It finds builders through overlooked projects, then analyzes their overall GitHub activity.
+
+### Usage
+
+```bash
+python3 builder_scout.py [options]
+```
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--days` | 7 | Days to look back for overlooked projects |
+| `--top` | 20 | Number of top builders to show |
+| `--no-llm` | False | Skip AI enrichment for faster results |
+| `--verbose` | False | Show detailed information |
+| `--output` | card | Output format: `card`, `compact`, or `json` |
+
+### Example Output
+
+```
+🔨 Builder Scout - Overlooked Prolific Builders
+Analyzing projects from last 7 days | GitHub activity from recent events (up to 90 days)
+
+1. Score: 75.0  [AI-ASSISTED]
+   Sarah Martinez (@smartz_dev)
+   Full-stack developer | Building tools for developers | Open source enthusiast
+   Recent Activity: 📦 8 repos active (30d), 23 total active (90d), 💾 67 push events
+   🤖 AI Usage: 12 commits with AI assistance detected
+   Discovered via: HN post (2024-01-15): Show HN: QuantumCSS – A CSS-in-Rust compiler
+   Profile: https://github.com/smartz_dev
+```
+
+### What It Analyzes
+
+- **Prolificness** - Commits, new projects, pull requests
+- **Overlooked factor** - High activity but low stars/forks
+- **AI adoption** - Detects AI-assisted development in commit messages
+- **Consistency** - Regular contribution patterns
+- **Time context** - Shows activity over 30-day and 90-day windows
+
+### AI Detection
+
+Builder Scout can identify developers using AI tools by analyzing commit messages for patterns like:
+- "Generated with Claude"
+- "Co-authored-by: Copilot"
+- AI-related emojis (🤖)
+- Other AI tool signatures
 
 ---
 
